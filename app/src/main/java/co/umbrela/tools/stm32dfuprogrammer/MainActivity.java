@@ -47,7 +47,7 @@ public class MainActivity extends Activity implements Handler.Callback, Usb.OnUs
         massErase.setOnClickListener(new Button.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mDfu.massErase();
+                mDfu.partialEraese();
             }
         });
 

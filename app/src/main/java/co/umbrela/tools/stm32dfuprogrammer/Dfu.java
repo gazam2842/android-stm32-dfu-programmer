@@ -78,6 +78,7 @@ public class Dfu {
         mDeviceVersion = deviceVersion;
     }
 
+    public  int ONE_PAGE = 4*1024;
     public void massErase() {
 
         // check if usb device is active
@@ -111,6 +112,57 @@ public class Dfu {
                 getStatus(dfuStatus);
             } while (dfuStatus.bState != STATE_DFU_IDLE);
             tv.setText("Mass erase completed in " + (System.currentTimeMillis() - startTime) + " ms");
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (Exception e) {
+            tv.setText(e.toString());
+        }
+        return;
+    }
+
+    public void partialEraese() {
+
+        // check if usb device is active
+        if (mUsb == null || !mUsb.isConnected()) {
+            tv.setText("No device connected");
+            return;
+        }
+
+        DFU_Status dfuStatus = new DFU_Status();
+        long startTime = System.currentTimeMillis();  // note current time
+
+        try {
+            do {
+                clearStatus();
+                getStatus(dfuStatus);
+            } while (dfuStatus.bState != STATE_DFU_IDLE);
+
+            if (isDeviceProtected()) {
+                removeReadProtection();
+                tv.setText("Read Protection removed. Device resets...Wait until it re-enumerates ");
+                return;
+            }
+
+            //massEraseCommand();                 // sent erase command request
+            openFile();
+            verifyFile();
+            int address = mDfuFile.fwStartAddress;
+            tv.setText("start address : " + Integer.toHexString(address) + "size " + mDfuFile.fwLength+"\n");
+
+            for (int i = 0; i <= (mDfuFile.fwLength / ONE_PAGE); i++) {
+                onePageEraseCommand(address);
+                getStatus(dfuStatus); // initiate erase command, returns 'download busy' even if invalid address or ROP
+                int pollingTime = dfuStatus.bwPollTimeout; // note requested waiting time
+                do {
+                    /* wait specified time before next getStatus call */
+                    Thread.sleep(pollingTime);
+                    clearStatus();
+                    getStatus(dfuStatus);
+                } while (dfuStatus.bState != STATE_DFU_IDLE);
+                tv.append("erase 0x" + Integer.toHexString(address) +"\n");
+                address = address + ONE_PAGE;
+            }
 
         } catch (InterruptedException e) {
             e.printStackTrace();
@@ -457,9 +509,9 @@ public class Dfu {
 
     private void checkCompatibility() throws Exception {
 
-        if ((mDevicePID != mDfuFile.PID) || (mDeviceVID != mDfuFile.VID)) {
-            throw new Exception("PID/VID Miss match");
-        }
+       // if ((mDevicePID != mDfuFile.PID) || (mDeviceVID != mDfuFile.VID)) {
+       //     throw new Exception("PID/VID Miss match");
+       // }
 
         // give warning and continue on
         if (mDeviceVersion != mDfuFile.Version) {
@@ -590,7 +642,16 @@ public class Dfu {
 
 
     }
-
+    private void onePageEraseCommand(int Address) throws Exception {
+        //one page = 2048
+        byte[] buffer = new byte[5];
+        buffer[0] = 0x41;
+        buffer[1] = (byte) (Address & 0xFF);
+        buffer[2] = (byte) ((Address >> 8) & 0xFF);
+        buffer[3] = (byte) ((Address >> 16) & 0xFF);
+        buffer[4] = (byte) ((Address >> 24) & 0xFF);
+        download(buffer, 5);
+    }
     private void leaveDfu() throws Exception {
         download(null, 0);
     }
